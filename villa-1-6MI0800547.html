@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+
+<!--Сиана Йорданова Дякова -->
+
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%
+        }
+    </style>
+    <script type="importmap">
+        { "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+            "villa": "https://boytchev.github.io/CourseOKG/villa.js",
+            "csg": "https://cdn.jsdelivr.net/gh/looeee/threejs-csg@main/src/CSG/CSG.js"
+        } }
+    </script>
+</head>
+
+<body>
+    <script type="module">
+        import * as THREE from "three";
+        import { villa, renderer, scene, camera, light, contraLight, controls } from "villa";
+        import { CSG } from "csg";
+
+        villa('6MI0800547'); // да е реалния фак.н.
+
+        // 1. преименувайте файла на villa-g-fn.html,
+        //    g=номер на група, а fn=факултетен номер
+        //    също попълнете коментара на третия ред!
+        //
+        // 2. първо сменете параметъра на villa( ) да
+        //    е факултетният ви номер - по този начин
+        //    ще се генерират сцена, земя и контур на
+        //    вилата ви, която ще трябва да направите
+        //
+        // 3. едва тогава почвайте да строите стените
+        //    и да добавяте исканите обекти по стаите
+        //
+        // 4. кубът по-долу е само за пример как може
+        //    да се слагат обекти, които правят сянка
+        //
+        // 5. белите квадратчета имат размер 20x20 см
+        //
+        // 6. горд съм как коментарите са равно дълги
+
+
+        // куб 2х2х2 метра
+        //var geometry = new THREE.BoxGeometry( 2, 2, 2 ),
+        //	material = new THREE.MeshLambertMaterial( {color: 'crimson'} );
+
+        //var cube = new THREE.Mesh( geometry, material );
+        //	cube.position.set( 0, 1, 0 );
+        //	cube.receiveShadow = true;
+        //	cube.castShadow = true;
+
+        // глобална конфигурация
+        let config = {
+            wall: {
+                thickness: 0.2,   // дебелина на стената
+                height: 3         // височина
+            },
+            door: {
+                height: 2.1,       // фиксирана височина на вратата
+                thickness: 0.25    // винаги малко > стената
+            },
+            window: {
+                sill: 1.0,         // начало от пода (височина)
+                height: 1.2,       // прозорецът самия
+                thickness: 0.25
+            },
+            ac: {
+                width: 1.0,
+                height: 0.6,
+                depth: 0.35,
+                roundRadius: 0.35   // радиусът = дълбочината → хубава обла форма
+            },
+            toilet: {
+                radius: 0.35,     // основен радиус
+                depthScale: 1.4,  // издърпване по Z (елипсоид)
+                thickness: 0.08 // дебелина на стената
+            }
+        };
+
+        function createDoor(x, z, x1, z1) {
+
+            const t = config.door.thickness;
+            const h = config.door.height;
+
+            const dir = new THREE.Vector3(x1 - x, 0, z1 - z);
+            const length = dir.length();
+            dir.normalize();
+
+            const normal = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+
+            const mid = new THREE.Vector3(
+                (x + x1) / 2 + normal.x * (t / 2),
+                h / 2,
+                (z + z1) / 2 + normal.z * (t / 2)
+            );
+
+            const geom = new THREE.BoxGeometry(length, h, t);
+            const mat = new THREE.MeshBasicMaterial({ color: "red" }); // видимо за debug
+
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.rotation.y = -Math.atan2(dir.z, dir.x);
+            mesh.position.copy(mid);
+
+            return mesh;
+        }
+
+        function createWindow(x, z, x1, z1) {
+
+            const t = config.window.thickness;
+            const sill = config.window.sill;
+            const h = config.window.height;
+
+            const dir = new THREE.Vector3(x1 - x, 0, z1 - z);
+            const length = dir.length();
+            dir.normalize();
+
+            const normal = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+
+            const mid = new THREE.Vector3(
+                (x + x1) / 2 + normal.x * (t / 2),
+                sill + h / 2,                 // център по височина
+                (z + z1) / 2 + normal.z * (t / 2)
+            );
+
+            const geom = new THREE.BoxGeometry(length, h, t);
+            const geomMAt = new THREE.MeshPhysicalMaterial({
+                color: 0x88ccff,
+                transparent: true,
+                opacity: 0.30,
+                transmission: 0.9,
+                roughness: 0.05,
+                metalness: 0,
+                thickness: 0.02,
+                side: THREE.DoubleSide
+            });
+
+            const mesh = new THREE.Mesh(geom, geomMAt);
+            mesh.rotation.y = -Math.atan2(dir.z, dir.x);
+            mesh.position.copy(mid);
+
+            return mesh;
+        }
+
+        function createRealWindow(w)
+        {
+            const pane = w.clone();
+            pane.material = new THREE.MeshPhysicalMaterial({
+                color: 0x88ccff,
+                transparent: true,
+                opacity: 0.30,
+                transmission: 0.9,
+                roughness: 0.05,
+                metalness: 0,
+                thickness: 0.02,
+                side: THREE.DoubleSide
+            });
+            scene.add(pane);
+        }
+
+
+        function createWall(x, z, x1, z1, arrayToSubstract) {
+
+            let h = config.wall.height;
+            let t = config.wall.thickness;
+
+            // Вектор AB (външна страна)
+            const dir = new THREE.Vector3(x1 - x, 0, z1 - z);
+            const length = dir.length();               // дължина на стената
+            dir.normalize();                           // единичен вектор по AB
+
+            // Перпендикуляр за вътрешната страна
+            const normal = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
+
+            // Център между A и B → това е позицията на стената
+            const mid = new THREE.Vector3(
+                (x + x1) / 2 + normal.x * (t / 2),
+                h / 2,
+                (z + z1) / 2 + normal.z * (t / 2)
+            );
+
+            // Геометрия: дължина по X, дебелина по Z → после въртим по посока
+            const geometry = new THREE.BoxGeometry(length, h, t);
+            const material = new THREE.MeshLambertMaterial({ color: 0xFFFFC5 });
+            const wall = new THREE.Mesh(geometry, material);
+
+            wall.castShadow = true;
+            wall.receiveShadow = true;
+            wall.position.copy(mid);
+
+            // завъртаме стената по вектор AB
+            const angle = Math.atan2(dir.z, dir.x);     // ориентация в хоризонтал
+            wall.rotation.y = -angle;
+
+            if (arrayToSubstract) {
+                let csg = new CSG();
+                let wallWithHoles = csg.subtract([wall, ...arrayToSubstract]).toMesh();
+                scene.add(wallWithHoles);
+                return wallWithHoles;
+            }
+            scene.add(wall);
+            return wall;
+        }
+
+        function createToilet(x, y, z, rotY = 0)
+        {
+
+            const r = config.toilet.radius;
+            const dz = config.toilet.depthScale;
+            const t = config.toilet.thickness;
+
+            // ----------- ВЪНШНО ТЯЛО (ЕЛИПСОИД) -----------
+            const outerGeom = new THREE.SphereGeometry(r, 20, 20);
+            const outerMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const outer = new THREE.Mesh(outerGeom, outerMat);
+
+            // издърпване по Z → елипсоид
+            outer.scale.set(1, 1, dz);
+
+            // ----------- ВЪТРЕШНА КУХИНА -----------
+            const innerGeom = new THREE.SphereGeometry(r - t, 20, 20);
+            const inner = new THREE.Mesh(innerGeom);
+
+            // по-слабо издърпване навътре
+            inner.scale.set(1, 1, dz * 0.8);
+
+            // леко изместване нагоре, за да оформи "чашата"
+            inner.position.y = 0.05;
+
+            // ----------- CSG: ИЗВАЖДАНЕ -----------
+            let csg = new CSG();
+            const bowl = csg.subtract([outer, inner]).toMesh();
+
+            const boxGeometria = new THREE.BoxGeometry(2 * r, 2 * r, 3 * r);
+            const boxMesh = new THREE.Mesh(boxGeometria); 
+            boxMesh.position.y = (-r / 2) - 0.1;
+            boxMesh.position.z = (r / 2) - 0.4;
+            csg = new CSG();
+            const bowlFinal2 = csg.intersect([bowl, boxMesh]).toMesh();
+
+
+            bowlFinal2.material = outerMat;
+            bowlFinal2.castShadow = true;
+            bowlFinal2.receiveShadow = true;
+            
+            //grupa
+            const group = new THREE.Group();
+            group.add(bowlFinal2);
+
+            //  ПЪЛНА 3D ПОЗИЦИЯ
+            group.position.set(x, y, z);
+            group.rotation.y = rotY;
+
+            scene.add(group);
+            return group;
+        }
+
+        createToilet(4.9, 0.8, 4.2, 0);
+
+        function createAC(x, y, z, rotY = 0)
+        {
+                let csg = new CSG();
+                const w = config.ac.width;
+                const h = config.ac.height;
+                const d = config.ac.depth;
+                const r = config.ac.roundRadius;
+
+
+                const boxGeom = new THREE.BoxGeometry(w, h, d);
+                const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                const box = new THREE.Mesh(boxGeom, mat);
+                // паралелепипед за изрязване / интерсек на капака 
+                const boxGeomIntersect = new THREE.BoxGeometry(w-0.12, h*(0.56), 2*d);
+                const boxIntersec = new THREE.Mesh(boxGeomIntersect, mat);
+
+                boxIntersec.position.y = 0.075;
+                boxIntersec.position.z = 0.3;
+
+                const cylGeom = new THREE.CylinderGeometry(r, r, w, 48);
+                const cMat = new THREE.MeshLambertMaterial({
+                    color: 0xFF0000,
+                    transparent: true,
+                    opacity: 0.5 });
+                const cylinder = new THREE.Mesh(cylGeom, cMat);
+
+                // цилиндър за капак
+                const cylCapacGeom = new THREE.CylinderGeometry(r + 0.03, r + 0.03, w, 48);
+                
+                const cylCapac = new THREE.Mesh(cylCapacGeom, mat);
+              
+
+                // Завъртаме цилиндъра да е по X
+                cylCapac.rotation.z = cylinder.rotation.z = Math.PI / 2;
+                // Изместваме го ПРЕД паралелепипеда
+                cylCapac.position.z = cylinder.position.z = (-0.7) * d;
+
+                const capac = csg.subtract([cylCapac, cylinder]).toMesh();
+                const finalCapac = csg.intersect([capac, boxIntersec]).toMesh();
+                //scene.add(capac);
+
+
+            //scene.add(group1);
+            //return;
+
+                // ---------- CSG: СЕЧЕНИЕ (INTERSECTION) ----------
+                csg = new CSG();
+                const acFront = csg.intersect([box, cylinder]).toMesh();
+
+            acFront.material = mat;
+
+
+                // ---------- ГРУПА ----------
+                const group = new THREE.Group();
+                group.add(acFront);
+                group.add(finalCapac);
+               
+                group.position.set(x, y, z);
+                group.rotation.y = rotY;
+
+            scene.add(group);
+            return group;
+        }
+
+        // климатик
+        createAC(3.0, 2.5, -1.67, 0);
+        createAC(-2.53, 2.5, -6, Math.PI / 2);
+        createAC(-6, 2.5, -1.67, 0);
+
+        // добавяме стени, вати и прозорци
+        // 1. южна стена с врата
+        let door1 = createDoor(-4.5, 5, -5.5, 5);
+        createWall(-3, 5, -7, 5, [door1]);
+
+        // 2. западна стена с прозорци
+        ///let windows = [createWindow(-7, 3.5, -7, 2), createWindow(-7, 1, -7, -0.5)];
+        //createWall(-7, 5, -7, -2, windows);
+
+
+        // 3. северна стена
+        createWall(-7, -2, -3, -2);
+
+        // вътрешновъншна / външна стена с врата (1,3)
+        let door2 = createDoor(-3, 0, -3, -1);
+        createWall(-3, 6, -3, -7, [door2]);
+
+        // диагонална стена с врата
+        createWall(-3, 2, -2, 2);
+
+        let doorD = createDoor(-1, 3, 0, 4);
+        createWall(-2, 2, 1, 5, [doorD]);
+
+        createWall(1, 5, 1, 6);
+
+        // вътрешновъншна стена с врата (3,5)
+        let door3 = createDoor(-1, -2, 0, -2);
+        createWall(-7, -2, 4, -2, [door3]);
+
+        // 4. северна стена
+        //let windows1 = [createWindow(-2, -7, 0, -7), createWindow(1, -7, 3, -7)];
+        //createWall(-3, -7, 4, -7, windows1);
+
+        // 5. источна стена
+        createWall(4, -7, 4, -2);
+
+        // 6. северна стена
+        createWall(3.8, -2, 6, -2);
+
+        // 7. источна стена
+        createWall(6, -2, 6, 5);
+
+        // 8. южна стена
+        createWall(6, 5, 4, 5);
+
+        // 9. изсточна стена
+        createWall(4, 4.8, 4, 6);
+
+        // 10. южна стена
+        createWall(4, 6, -3, 6);
+
+        //баня стена
+        let door4 = createDoor (3.8, 2, 3.8, 1);
+        createWall(3.8, 4.8, 3.8, -1.8, [door4]);
+
+        let w1 = createWindow(-7, 3.5, -7, 2);
+        let w2 = createWindow(-7, 1, -7, -0.5);
+
+        let w3 = createWindow(-2, -7, 0, -7);
+        let w4 = createWindow(1, -7, 3, -7);
+
+        createWall(-3, -7, 4, -7, [w3, w4]);
+        createRealWindow(w3);
+        createRealWindow(w4);
+        createWall(-7, 5, -7, -2, [w1, w2]);
+        createRealWindow(w1);
+        createRealWindow(w2);
+
+
+        // DUSH KABINA
+        function createShower(x, y, z, sizeX = 1.0, sizeZ = 1, height = 2)
+        {
+
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0x88ccff,
+                transparent: true,
+                opacity: 0.30,
+                transmission: 0.9,
+                roughness: 0.05,
+                metalness: 0,
+                thickness: 0.02,
+                side: THREE.DoubleSide
+            });
+
+            const panel1Geo = new THREE.BoxGeometry(sizeX, height, 0.05);
+            const panel1 = new THREE.Mesh(panel1Geo, glassMat);
+            panel1.castShadow = true;
+            panel1.receiveShadow = true;
+            panel1.position.set(x + sizeX / 2, y + height / 2, z);
+
+            const panel2Geo = new THREE.BoxGeometry(0.05, height, sizeZ);
+            const panel2 = new THREE.Mesh(panel2Geo, glassMat);
+            panel2.castShadow = true;
+            panel2.receiveShadow = true;
+            panel2.position.set(x, y + height / 2, z - sizeZ / 2);
+
+            const group = new THREE.Group();
+            group.add(panel1);
+            group.add(panel2);
+
+            scene.add(group);
+            return group;
+        }
+
+        createShower(4.8, 0, -0.75);
+
+
+    </script>
+
+</body>
+</html>
+
+
