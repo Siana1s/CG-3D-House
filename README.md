@@ -2,6 +2,8 @@
 
 An interactive 3D model of a villa rendered in the browser with **Three.js**, built for Sofia University's Computer Graphics (OKG) course. Runs entirely client-side — no build step.
 
+**Website:** https://siana1s.github.io/CG-3D-House
+
 ### Features
 - Procedurally built rooms, walls, windows and interior objects
 - Real-time lighting, shadows and orbit-camera controls
